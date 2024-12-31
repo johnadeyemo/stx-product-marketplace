@@ -179,3 +179,68 @@
     (map-set user-stx-balance contract-owner (+ owner-balance commission))
 
     (ok true)))
+
+;; Function to optimize price setting logic by checking for the minimum price
+(define-public (optimize-price-check (new-price uint))
+  (begin
+    ;; Optimize by ensuring price is above a defined minimum threshold
+    (asserts! (> new-price u1000) err-invalid-price)  ;; Minimum price in microstacks
+    (var-set product-price new-price)
+    (ok true)))
+
+;; Function to refactor get-stx-balance for optimized lookup
+(define-public (refactor-get-stx-balance (user principal))
+  (let (
+    (balance (default-to u0 (map-get? user-stx-balance user)))
+  )
+    ;; Refactor for better performance when fetching STX balance
+    (ok balance)))
+
+;; New functionality: Remove products from the reserve
+(define-public (remove-product-from-reserve (quantity uint))
+  (begin
+    (asserts! (> quantity u0) err-invalid-quantity)
+    (try! (update-product-reserve (to-int (- quantity))))
+    (ok true)))
+
+;; Read-only functions
+
+;; Get current product price
+(define-read-only (get-product-price)
+  (ok (var-get product-price)))
+
+;; Get current commission rate
+(define-read-only (get-commission-rate)
+  (ok (var-get commission-rate)))
+
+;; Get user's product balance
+(define-read-only (get-product-balance (user principal))
+  (ok (default-to u0 (map-get? user-product-balance user))))
+
+;; Get user's STX balance
+(define-read-only (get-stx-balance (user principal))
+  (ok (default-to u0 (map-get? user-stx-balance user))))
+
+;; Get products for sale by user
+(define-read-only (get-products-for-sale (user principal))
+  (ok (default-to {quantity: u0, price: u0} (map-get? products-for-sale {user: user}))))
+
+;; Get maximum products per user
+(define-read-only (get-max-products-per-user)
+  (ok (var-get max-products-per-user)))
+
+;; Get current product reserve
+(define-read-only (get-current-product-reserve)
+  (ok (var-get current-product-reserve)))
+
+;; Get product reserve limit
+(define-read-only (get-product-reserve-limit)
+  (ok (var-get product-reserve-limit)))
+
+;; Set maximum products per user (only contract owner)
+(define-public (set-max-products-per-user (new-limit uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (> new-limit u0) err-invalid-quantity)
+    (var-set max-products-per-user new-limit)
+    (ok true)))
