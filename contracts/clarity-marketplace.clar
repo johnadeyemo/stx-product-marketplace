@@ -121,3 +121,61 @@
     (var-set product-reserve-limit new-limit)
     (ok true)))
 
+;; Add products for sale
+(define-public (add-product-for-sale (quantity uint) (price uint))
+  (let (
+    (current-balance (default-to u0 (map-get? user-product-balance tx-sender)))
+    (current-for-sale (get quantity (default-to {quantity: u0, price: u0} (map-get? products-for-sale {user: tx-sender}))))
+    (new-for-sale (+ quantity current-for-sale))
+  )
+    (asserts! (> quantity u0) err-invalid-quantity) ;; Ensure quantity is greater than 0
+    (asserts! (> price u0) err-invalid-price) ;; Ensure price is greater than 0
+    (asserts! (>= current-balance new-for-sale) err-insufficient-quantity)
+    (try! (update-product-reserve (to-int quantity)))
+    (map-set products-for-sale {user: tx-sender} {quantity: new-for-sale, price: price})
+    (ok true)))
+
+;; Remove products from sale
+(define-public (remove-product-from-sale (quantity uint))
+  (let (
+    (current-for-sale (get quantity (default-to {quantity: u0, price: u0} (map-get? products-for-sale {user: tx-sender}))))
+  )
+    (asserts! (>= current-for-sale quantity) err-insufficient-quantity)
+    (try! (update-product-reserve (to-int (- quantity))))
+    (map-set products-for-sale {user: tx-sender} 
+             {quantity: (- current-for-sale quantity), 
+              price: (get price (default-to {quantity: u0, price: u0} (map-get? products-for-sale {user: tx-sender})))})
+    (ok true)))
+
+;; Buy products from farmer
+(define-public (buy-product-from-farmer (farmer principal) (quantity uint))
+  (let (
+    (product-data (default-to {quantity: u0, price: u0} (map-get? products-for-sale {user: farmer})))
+    (product-cost (* quantity (get price product-data)))
+    (commission (calculate-commission product-cost))
+    (total-cost (+ product-cost commission))
+    (farmer-product (default-to u0 (map-get? user-product-balance farmer)))
+    (buyer-balance (default-to u0 (map-get? user-stx-balance tx-sender)))
+    (farmer-balance (default-to u0 (map-get? user-stx-balance farmer)))
+    (owner-balance (default-to u0 (map-get? user-stx-balance contract-owner)))
+  )
+    (asserts! (not (is-eq tx-sender farmer)) err-transaction-aborted)
+    (asserts! (> quantity u0) err-invalid-quantity) ;; Ensure quantity is greater than 0
+    (asserts! (>= (get quantity product-data) quantity) err-insufficient-quantity)
+    (asserts! (>= farmer-product quantity) err-insufficient-quantity)
+    (asserts! (>= buyer-balance total-cost) err-insufficient-funds)
+
+    ;; Update farmer's product balance and for-sale quantity
+    (map-set user-product-balance farmer (- farmer-product quantity))
+    (map-set products-for-sale {user: farmer} 
+             {quantity: (- (get quantity product-data) quantity), price: (get price product-data)})
+
+    ;; Update buyer's STX and product balance
+    (map-set user-stx-balance tx-sender (- buyer-balance total-cost))
+    (map-set user-product-balance tx-sender (+ (default-to u0 (map-get? user-product-balance tx-sender)) quantity))
+
+    ;; Update farmer's and contract owner's STX balance
+    (map-set user-stx-balance farmer (+ farmer-balance product-cost))
+    (map-set user-stx-balance contract-owner (+ owner-balance commission))
+
+    (ok true)))
